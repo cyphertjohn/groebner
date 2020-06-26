@@ -43,18 +43,23 @@ module MakeMon (C : Coefficient) = struct
   let get_monic_mon (Coef c, mon) = mon
   
   let get_coef (Coef c, Prod mon) = c
-   
-  let mult_mon a b = (*improve*)
+
+  let mult_mon a b = 
     let new_coef = C.mulc (get_coef a) (get_coef b) in
     if (C.is_zero new_coef) then (Coef (C.from_string_c "0"), Prod [])
     else 
-      let (Prod l1, Prod l2) = (get_monic_mon a, get_monic_mon b) in
-      match (l1, l2) with
-      | ([], _) -> sort_monomial (Coef new_coef, Prod l2)
-      | (_, []) -> sort_monomial (Coef new_coef, Prod l1)
-      | _ -> 
-        let new_monic = List.fold_left (fun acc y-> mult_var_mon y acc) (Prod l1) l2 in
-        (Coef new_coef, new_monic)
+      let (Prod l1, Prod l2) = (sort_monic_mon (get_monic_mon a), sort_monic_mon (get_monic_mon b)) in
+      let rec zip m1 m2 acc =
+        match (m1, m2) with 
+        | ([], []) -> (Coef new_coef, Prod (List.rev acc))
+        | ((Exp (x, e1)) :: xs, []) -> (Coef new_coef, Prod ((List.rev acc) @ m1))
+        | ([], Exp (y, e2) :: ys) -> (Coef new_coef, Prod ((List.rev acc) @ m2))
+        | ((Exp (x, e1)) :: xs, Exp (y, e2) :: ys) -> 
+          if x = y then zip xs ys ((Exp (y, e1+e2)) :: acc)
+          else if compare x y < 0 then zip xs m2 ((Exp (x, e1)) :: acc)
+          else zip m1 ys ((Exp (y, e2)) :: acc)
+      in
+      zip l1 l2 []
   
   let divide_mon a b = 
     let new_coef = C.divc (get_coef a) (get_coef b) in
@@ -170,7 +175,7 @@ module Make (M : sig
 
   let minus_1 = Sum [(Coef (M.from_string_c ("-1")), Prod [])]
 
-  let division divisors f =
+(*  let division divisors f =
     let r = ref (sort_poly (Sum [])) in
     let mults = ref (List.map (fun _ -> sort_poly (Sum [])) divisors) in
     let s = List.length divisors in
@@ -193,15 +198,44 @@ module Make (M : sig
         p := add !p (mult (Sum [(lt !p)]) minus_1))
     )
     done;
-    (!mults, !r)
+    (!mults, !r) *)
+  
+  let division divisors f =
+    let find_map func lis = 
+      let rec foo l i =
+        match l with
+        | [] -> None
+        | x :: xs ->
+          match func x with 
+          | None -> foo xs (i+1)
+          | Some y -> Some (y, i)
+      in
+      foo lis 0
+    in
+    let rec aux p mults r = 
+      if is_zero p then (mults, r)
+      else 
+        let ltp = lt p in
+        let ltdiv fi = M.divide_mon ltp (lt fi) in
+        match find_map ltdiv divisors with
+        | None ->
+          aux (add p (mult (Sum [ltp]) minus_1)) mults (add r (Sum [ltp]))
+        | Some (new_mon, i) ->
+          aux (add p (mult minus_1 (mult (Sum [new_mon]) (List.nth divisors i)))) (List.mapi (fun j x -> if j = i then add x (Sum [new_mon]) else x) mults) r
+    in
+    aux f (List.map (fun _ -> (Sum [(Coef (M.from_string_c "0"), Prod [])])) divisors) ((Sum [(Coef (M.from_string_c "0"), Prod [])]))
 
   let s_poly f g =
     let lcmlm = M.lcm (lm f) (lm g) in
     let f_m = M.divide_mon (Coef (M.from_string_c "1"), lcmlm) (lt f) in
     let g_m = M.divide_mon (Coef (M.from_string_c "1"), lcmlm) (lt g) in
     match (f_m, g_m) with
-    | (Some f_t, Some g_t) ->
-      add (mult (Sum [f_t]) f) (mult minus_1 (mult (Sum [g_t]) g))
+    | (Some f_t, Some (Coef c, g_t)) ->
+      let s = add (mult (Sum [f_t]) f) (mult (Sum [(Coef (M.mulc c (M.from_string_c "-1")), g_t)]) g) in
+      (*print_endline ("f: " ^ (to_string f));
+      print_endline ("g: " ^ (to_string g));
+      print_endline ("s: " ^ (to_string s));*)
+      s
     | _ -> failwith "shouldn't happen"
 
   let buchberger (fs : M.coef polynomial list) = 
@@ -218,33 +252,12 @@ module Make (M : sig
     done;
     !g
 
-  let improved_buchberger (fs : M.coef polynomial list) = 
-    let rec aux worklist g fss=
-      match worklist with
-      | [] -> g
-      | (fi, fj) :: rest ->
-        let lcmlt = M.lcm (lm fi) (lm fj) in (* lt or lm? *)
-        let prod = M.get_monic_mon (M.mult_mon (lt fi) (lt fj)) in
-        if lcmlt = prod then aux rest g fss (* criterion *)
-        else (
-          let s = snd (division g (s_poly fi fj)) in
-          print_endline (to_string s);
-          if is_zero s then aux rest g fss
-          else (
-            aux (worklist @ (List.map (fun f -> (f, s)) fss)) (s :: g) (fss @ [s])
-          )
-        )
-    in
-    let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
-    aux (get_pairs fs) fs fs
-
-  let minimal_grobner fs = 
-    let grobner_basis = improved_buchberger fs in
+  let minimize fs = 
     let monic_grobner = List.map 
       (fun poly -> 
         let lc = lc poly in
         mult (Sum [(Coef (M.divc (M.from_string_c "1") lc), Prod [])]) poly
-      ) grobner_basis in
+      ) fs in
     let is_need poly l = 
       let others = List.filter (fun p -> p <> poly) l in
       let divides x = match M.divide_mon (lt poly) (lt x) with | Some _ -> true | None -> false in
@@ -257,9 +270,49 @@ module Make (M : sig
     in
     filter monic_grobner
 
+  let improved_buchberger (fs : M.coef polynomial list) = 
+    let rec aux worklist g fss=
+      let t = (List.length fss) - 1 in
+      let criterion i j lcmu =
+        let rec foo k =
+          if k > t then false
+          else if k = i || k = j then foo (k+1)
+          else
+            let p1 = if k < i then (k, i) else (i,k) in
+            let p2 = if k < j then (k, j) else (j,k) in
+            if List.exists ((=) p1) worklist then foo (k+1)
+            else if List.exists ((=) p2) worklist then foo (k+1)
+            else
+              match M.divide_mon (lt (List.nth fss k)) lcmu with
+              | None -> foo (k+1)
+              | Some _ -> true
+        in
+        foo 0
+      in
+      match worklist with
+      | [] -> g
+      | (i, j) :: rest ->
+        let (fi, fj) = (List.nth fss i, List.nth fss j) in
+        let lcmlt = M.lcm (lm fi) (lm fj) in (* lt or lm? *)
+        let prod = M.get_monic_mon (M.mult_mon (lt fi) (lt fj)) in
+        if lcmlt = prod then aux rest g fss (* criterion *)
+        else if criterion i j (Coef (M.from_string_c "1"), lcmlt) then aux rest g fss
+        else (
+          let s = snd (division g (s_poly fi fj)) in
+          (*print_endline (to_string s);*)
+          if is_zero s then aux rest g fss
+          else 
+          aux (worklist @ (List.mapi (fun i _ -> (i, t+1)) fss)) (List.rev (List.sort compare (minimize (s :: g)))) (fss @ [s])
+        )
+    in
+    let sortfs = List.rev (List.sort compare (List.map sort_poly fs)) in
+    let get_pairs l = List.filter (fun (x, y) -> x<>y) (fst(List.fold_left (fun (acc, l1) x -> (acc @ (List.map (fun y -> (x, y)) l1),List.tl l1)) ([],l) l)) in
+    aux (get_pairs (List.mapi (fun i _ -> i) sortfs)) sortfs sortfs
+
+
 end
 
-module Coeff : Coefficient = struct 
+module FloatC : Coefficient = struct 
   type coef = float 
   let addc = (+.) 
   let mulc = ( *. ) 
@@ -271,7 +324,19 @@ module Coeff : Coefficient = struct
   let cmp = compare 
 end
 
-module Mon = MakeMon (Coeff)
+module MpqfC : Coefficient = struct 
+  type coef = Mpqf.t
+  let addc = Mpqf.add 
+  let mulc = Mpqf.mul
+  let divc = Mpqf.div
+  let is_zero c = (Mpqf.cmp_int c 0) = 0
+  let is_one c = (Mpqf.cmp_int c 1) = 0
+  let to_string_c = Mpqf.to_string
+  let from_string_c = Mpqf.of_string
+  let cmp = Mpqf.cmp
+end
+
+module Mon = MakeMon (MpqfC)
 
 module Polynomial = Make (Mon)
 
@@ -337,7 +402,7 @@ module Eliminate = struct
   let eliminate polys remove =
     set_var_order polys remove;
     Polynomial.set_ord (elimination_order remove);
-    let g = Polynomial.minimal_grobner polys in
+    let g = Polynomial.improved_buchberger polys in
     List.filter (fun poly -> not (List.exists (fun v -> poly_cont_var v poly) remove)) g
 
 end
