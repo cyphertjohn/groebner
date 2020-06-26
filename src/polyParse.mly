@@ -1,7 +1,7 @@
 /* File parser.mly */
         %{
             let negate_mon (Sigs.Coef c, x) = 
-              (Sigs.Coef ((-1.) *. c), x)
+              (Sigs.Coef ("-" ^ c), x)
 
             let negate_first l =
               match l with
@@ -9,7 +9,7 @@
               | [] -> failwith "This can't happen"
               
         %}        
-        %token <int> INT
+        %token <string> INT
         %token <char> VAR
         %token PLUS MINUS TIMES POWER
         %token EOL
@@ -18,7 +18,7 @@
         %right POWER
         %nonassoc UMINUS        /* highest precedence */
         %start main             /* the entry point */
-        %type <Sigs.polynomial> main
+        %type <string Sigs.polynomial> main
         %%
         main:
             poly EOL                { Sigs.Sum $1 }
@@ -30,10 +30,10 @@
           | monomial                        { [$1] }
         ;
         monomial:
-            INT TIMES monic_mon             { (Sigs.Coef (float_of_int $1), Sigs.Prod $3) }
-          | INT monic_mon                   { (Sigs.Coef (float_of_int $1), Sigs.Prod $2) }
-          | monic_mon                       { (Sigs.Coef (1.), Sigs.Prod $1)}
-          | INT                             { (Sigs.Coef (float_of_int $1), Sigs.Prod []) }
+            INT TIMES monic_mon             { (Sigs.Coef ($1), Sigs.Prod $3) }
+          | INT monic_mon                   { (Sigs.Coef ($1), Sigs.Prod $2) }
+          | monic_mon                       { (Sigs.Coef ("1"), Sigs.Prod $1)}
+          | INT                             { (Sigs.Coef ($1), Sigs.Prod []) }
         ;
         monic_mon:
             var_power TIMES monic_mon       { $1 :: $3 }
@@ -41,6 +41,6 @@
           | var_power                       { [$1] }
         ;
         var_power:
-            VAR POWER INT                   { Sigs.Exp ( Char.escaped $1, $3) }
+            VAR POWER INT                   { Sigs.Exp ( Char.escaped $1, int_of_string $3) }
           | VAR                             { Sigs.Exp ( Char.escaped $1, 1) } 
         ;
