@@ -10,7 +10,7 @@
               
         %}        
         %token <string> INT
-        %token <char> VAR
+        %token <string> VAR
         %token PLUS MINUS TIMES POWER
         %token EOL
         %left PLUS MINUS        /* lowest precedence */
@@ -41,6 +41,6 @@
           | var_power                       { [$1] }
         ;
         var_power:
-            VAR POWER INT                   { Sigs.Exp ( Char.escaped $1, int_of_string $3) }
-          | VAR                             { Sigs.Exp ( Char.escaped $1, 1) } 
+            VAR POWER INT                   { Sigs.Exp ( $1, int_of_string $3) }
+          | VAR                             { Sigs.Exp ( $1, 1) } 
         ;

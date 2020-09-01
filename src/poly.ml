@@ -101,6 +101,7 @@ module Make (M : sig
               val mult_mon : coef monomial -> coef monomial -> coef monomial
               val sort_monomial : coef monomial -> coef monomial
               val get_monic_mon : 'a monomial -> monic_mon
+              val total_deg : monic_mon -> int
               val to_string : coef monomial -> string
               val divide_mon : coef monomial -> coef monomial -> (coef monomial) option
               val lcm : monic_mon -> monic_mon -> monic_mon
@@ -150,6 +151,8 @@ module Make (M : sig
   
   let to_string (Sum p) = 
     String.concat " + " (List.map M.to_string p)
+
+  let is_lin (Sum p) = List.for_all (fun m -> M.total_deg (M.get_monic_mon m) <= 1) p
 
   let is_zero p = 
     match sort_poly p with
@@ -336,7 +339,9 @@ module MpqfC : Coefficient = struct
   let cmp = Mpqf.cmp
 end
 
-module Mon = MakeMon (MpqfC)
+module C = MpqfC
+
+module Mon = MakeMon (C)
 
 module Polynomial = Make (Mon)
 
@@ -405,10 +410,16 @@ module Eliminate = struct
     let g = Polynomial.improved_buchberger polys in
     List.filter (fun poly -> not (List.exists (fun v -> poly_cont_var v poly) remove)) g
 
+  let affine_hull polys = 
+    set_var_order polys [];
+    Polynomial.set_ord grevlex_ord;
+    let g = Polynomial.improved_buchberger polys in
+    List.filter Polynomial.is_lin g
+
 end
 
 
-let p1 = Polynomial.from_string "x^2y - 1"
+(*let p1 = Polynomial.from_string "x^2y - 1"
 let p2 = Polynomial.from_string "xy^2 - x"
 let p3 = Polynomial.from_string "x^3 - 2xy"
 let p4 = Polynomial.from_string "x^2y-2y^2+x"
@@ -424,4 +435,4 @@ let m2 = Sigs.Prod [Exp("x", 1);Exp("y",1)];;
 let m3 = Sigs.Prod [Exp("y", 2)];;
 let m4 = Sigs.Prod [Exp("x", 1);Exp("z",1)];;
 let m5 = Sigs.Prod [Exp("y", 1);Exp("z",1)];;
-let m6 = Sigs.Prod [Exp("z", 2)];;
+let m6 = Sigs.Prod [Exp("z", 2)];;*)
