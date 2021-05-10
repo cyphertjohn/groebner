@@ -1,4 +1,6 @@
 open Sigs
+open Poly.Polynomial
+
 
 module Coefficient = Poly.C
 (*module Coefficient = struct 
@@ -174,6 +176,7 @@ let max_project a b =
     if num_nonzero_rows <= 1 then
       basis := Array.map (fun row -> Array.sub row 1 ((Array.length row) - 1)) !basis
     else
+      print_endline "rref in project";
       let (new_basis, _, _) = rref !basis in
       basis := new_basis
   done;
@@ -196,7 +199,7 @@ let mat_div d a =
         let uind = left_non_zero rowu in
         let vind = left_non_zero rowv in
           if uind <k && vind < k || uind>=k && vind>=k then
-            compare uind vind
+            Pervasives.compare uind vind
           else if uind <=k then
             1
           else 
@@ -219,35 +222,6 @@ let mat_div d a =
     let succ = Array.mapi outer d in
     (res, succ)
   else failwith "Incompatible matrix dimensions"
-
-
-let zass a b =
-  let n = Array.length a in
-  let m = Array.length a.(0) in
-  let k = Array.length b in
-  if Array.length b.(0) = m then
-    let s = Array.mapi 
-      (fun i row ->
-        if i < n then Array.append a.(i) a.(i)
-        else Array.append b.(i-n) (Array.make m (Coefficient.from_string_c "0"))
-        ) (Array.make (n+k) (""))
-      in
-    let (r, _, _) = rref s in
-    let start = 
-      (Array.fold_left
-        (fun acc v -> max acc v) 
-        (-1)
-        (Array.mapi 
-          (fun i row -> 
-            if Coefficient.is_zero row.(m-1) then
-              -1
-            else i
-          ) r)) + 1
-    in
-    let temp = Array.sub (Array.map (fun row -> Array.sub row m m) r) start (n+k - start) in
-    let non_zero_rows = Array.fold_left (fun acc row -> if Array.for_all Coefficient.is_zero row then acc else acc+1) 0 temp in
-    Array.sub temp 0 non_zero_rows
-  else failwith "Incompatible dimensions"
 
 
 module AffineT = struct
@@ -383,7 +357,7 @@ module AffineT = struct
       if (Array.for_all Coefficient.is_zero ab) then
         if Coefficient.is_zero row.(width - 1) then
           failwith "Linear Dependency. Should have been handled by Grob"
-        else failwith ""
+        else failwith "Transition system is empty"
       else
       (Array.sub row 0 awidth, Array.sub row awidth awidth, row.(width - 1))
     in
@@ -392,16 +366,15 @@ module AffineT = struct
     let (ua, ub, uc) = (Array.of_list (List.rev ualist), Array.of_list (List.rev ublist), Array.of_list (List.rev uclist)) in
     (mat_mult p ua, mat_mult p ub, mat_mult_v p uc, List.map fst pre_post)
   
-  let tats_to_string a m c =
-    let aw = get_mat_widths a in
-    let mw = get_mat_widths m in
-    let cmat = Array.mapi (fun i _ -> Array.make 1 c.(i)) a in
-    let cw = get_mat_widths cmat in
-    let row i = 
-      if i = (Array.length a) / 2 then (mat_row_to_string a.(i) aw) ^ " = " ^ (mat_row_to_string m.(i) mw)^(mat_row_to_string a.(i) aw) ^ " + " ^ (mat_row_to_string cmat.(i) cw)
-      else (mat_row_to_string a.(i) aw) ^ "   " ^ (mat_row_to_string m.(i) mw) ^(mat_row_to_string a.(i) aw)^ "   " ^ (mat_row_to_string cmat.(i) cw)
+  let totoify a b c =
+    let rec aux curr_a curr_b curr_c = 
+      let (dyn, divsuc) = mat_div curr_b curr_a in
+      if Array.for_all (fun x -> x) divsuc then (curr_a, curr_b, curr_c)
+      else
+        let tnew = max_project curr_a curr_b in
+        aux (mat_mult tnew curr_a) (mat_mult tnew curr_b) (mat_mult_v tnew curr_c)
     in
-    String.concat "\n" (Array.to_list (Array.mapi (fun r _ -> row r) a))
+    aux a b c
 
   let dats_to_string t little_t d little_d vars sim =
     let tw = get_mat_widths t in
@@ -430,34 +403,18 @@ module AffineT = struct
     String.concat "\n" (Array.to_list (Array.mapi (fun r _ -> row r) t))
 
   let affine_to_dats init_a init_b init_c vars =
-    let rec aux curr_a curr_b curr_c curr_t = 
-      let (dyn, divsuc) = mat_div curr_b curr_a in
-      (*if Array.for_all (fun x -> x) divsuc then (curr_a, dyn, curr_c, curr_t)*)
-      if Array.for_all (fun x -> x) divsuc then (curr_a, curr_b, curr_c, curr_t)
-      else
-        let tnew = max_project curr_a curr_b in
-        aux (mat_mult tnew curr_a) (mat_mult tnew curr_b) (mat_mult_v tnew curr_c) tnew
-    in
-    (*let (a, m, c, sim) = aux init_a init_b init_c (Array.make_matrix 1 1 (Coefficient.from_string_c "0")) in*)
-    let (a, b, c, sim) = aux init_a init_b init_c (Array.make_matrix 1 1 (Coefficient.from_string_c "0")) in
+    let (a, b, c) = totoify init_a init_b init_c in
     let (u, l, li, p) = lu a in
     let (l, li) = (mat_mult p l, mat_mult li p) in
     let zero_rows = Array.fold_left (fun acc row -> if Array.for_all Coefficient.is_zero row then acc + 1 else acc) 0 u in
     let total_rows = Array.length u in
-
     let (dyn_mat, _) = mat_div (mat_mult li b) (Array.sub u 0 (total_rows - zero_rows)) in
-
-    (*let dyn_mat = mat_mult (mat_mult li m) l in*)
     let add_mat = mat_mult_v li c in
     if zero_rows = 0 then
       (dyn_mat, add_mat, Array.make_matrix 1 (Array.length dyn_mat.(0)) (Coefficient.from_string_c "0"), Array.make 1 (Coefficient.from_string_c "0"), u)
     else
-      (*let t = Array.sub (Array.map (fun row -> Array.sub row 0 (total_rows-zero_rows)) dyn_mat) 0 (total_rows-zero_rows) in
-      let d = Array.sub (Array.map (fun row -> Array.sub row 0 (total_rows-zero_rows)) dyn_mat) (total_rows - zero_rows) zero_rows in*)
-
       let t = Array.sub dyn_mat 0 (total_rows-zero_rows) in
       let d = Array.sub dyn_mat (total_rows - zero_rows) zero_rows in
-
       let little_t = Array.sub add_mat 0 (total_rows - zero_rows) in
       let little_d = Array.map (Coefficient.mulc (Coefficient.from_string_c "-1")) (Array.sub add_mat (total_rows-zero_rows) zero_rows) in
       let s = Array.sub u 0 (total_rows-zero_rows) in
@@ -490,6 +447,46 @@ module AffineT = struct
     let (t, little_t, d, little_d, s) = affine_to_dats a b c vars in
     (t, little_t, d, little_d, s, vars)
 
+  let alg_to_poly_map_1 polys pre_post = 
+    let (init_a, init_b, init_c, vars) = alg_to_affine polys pre_post in
+    let (a, b, c) = totoify init_a init_b init_c in
+    let (terms_characterized, vars_to_elim_list) = 
+      List.split (List.map 
+        (fun arow ->
+          let (mon_list, va) = List.fold_left2 
+            (fun (termlist, involved_vars) coe var ->
+              if Coefficient.is_zero coe then (termlist, involved_vars)
+              else
+                let new_mon : (Coefficient.coef) monomial = (Coef coe, Prod [Exp (var, 1)]) in
+                (new_mon :: termlist, var :: involved_vars)
+            )
+            ([], [])
+            (Array.to_list arow)
+            vars
+          in
+          (sort_poly (Sum mon_list), va)
+          )
+        (Array.to_list a))
+    in
+    let rec remove_dups lst = match lst with
+      | [] -> []
+      | h :: t -> h :: (remove_dups (List.filter (fun x -> x<>h) t))
+    in
+    let find_primed_partner v = snd (List.find (fun p -> fst p = v) pre_post) in
+    let unprimed_vars_to_elim = remove_dups (List.concat vars_to_elim_list) in
+    let primed_vars_to_elim = List.map find_primed_partner unprimed_vars_to_elim in
+    let vars_to_elim = unprimed_vars_to_elim @ primed_vars_to_elim in
+    let associated_vars_terms = List.mapi (fun i term -> ("dummy" ^ (string_of_int i), term)) terms_characterized in
+    let new_eq = List.map (fun (dum_var, term) -> add (from_string_dum dum_var) (mult (from_string "-1") term)) associated_vars_terms in
+    let new_polys = Poly.Eliminate.eliminate (List.append polys new_eq) vars_to_elim in
+    let new_map_in_dummy = List.filter is_lin_in_non_dummies new_polys in
+    let new_map = List.fold_left (fun old_polys (v, sub_poly) -> List.map (substitute (v, sub_poly)) old_polys) new_map_in_dummy associated_vars_terms in
+    let (t, little_t, d, little_d, s) = affine_to_dats a b c vars in
+    print_endline ("Stratum 0");
+    print_endline (dats_to_string t little_t d little_d vars s);
+    print_endline "\nStratum 1";
+    print_endline (String.concat "\n" (List.map to_string new_map_in_dummy))
+
 end 
 
 let p1 = Poly.Polynomial.from_string "x'-y'-x+y-2";;
@@ -498,5 +495,5 @@ let p3 = Poly.Polynomial.from_string "x-3";;
 let p4 = Poly.Polynomial.from_string "y";;
 let p5 = Poly.Polynomial.from_string "z+3";;
 let p6 = Poly.Polynomial.from_string "x'-x - 5";;
-let (t, litte_t, d, little_d, sim, vars) = AffineT.alg_to_dats [p1;p2;p3;p4;p5;p6] [("x", "x'"); ("y", "y'"); ("z","z'")];;
-print_endline (AffineT.dats_to_string t litte_t d little_d vars sim)
+let (t, little_t, d, little_d, sim, vars) = AffineT.alg_to_dats [p1;p2;p5] [("x", "x'"); ("y", "y'"); ("z","z'")];;
+print_endline (AffineT.dats_to_string t little_t d little_d vars sim)

@@ -154,6 +154,54 @@ module Make (M : sig
 
   let is_lin (Sum p) = List.for_all (fun m -> M.total_deg (M.get_monic_mon m) <= 1) p
 
+  let mon_contain_only_dummy (Coef _, Prod m) =
+    List.for_all
+      (fun (Exp (v, e)) ->
+        if String.length v < 5 then false
+        else if (String.sub v 0 5) = "dummy" then true
+        else false
+      ) m
+
+
+  let is_lin_in_non_dummies (Sum p) = 
+    List.for_all
+      (fun (Coef c, Prod m) -> 
+        if M.total_deg (Prod m) <= 1 then true
+        else
+          mon_contain_only_dummy (Coef c, Prod m)
+        ) p
+
+  let exp_poly p e = 
+    let rec aux curr_e acc = 
+      if curr_e <= 0 then acc
+      else aux (curr_e - 1) (mult p acc)
+    in
+    aux (e - 1) p
+
+  let subsitute_mon (var, p1) (Coef c, Prod mon) =
+    let (rest_mon, sub_mon) = 
+      List.fold_left 
+        (fun (seen_mon, found_opt) (Exp (v2, e)) ->
+          if var = v2 then
+            (seen_mon, Some (Exp (v2, e)))
+          else
+            ((Exp (v2, e)) :: seen_mon, found_opt)
+        )
+        ([], None)
+        mon
+    in
+    match sub_mon with
+    | None -> Sum [(Coef c, Prod mon)]
+    | Some (Exp (_, e)) ->
+      let expand_p1 = exp_poly p1 e in
+      mult expand_p1 (Sum [(Coef c, Prod rest_mon)])
+      
+
+  let substitute (var, p1) (Sum p2) = 
+    let sub_list = List.map (subsitute_mon (var, p1)) p2 in
+    List.fold_left (fun acc p -> add acc p) (List.hd sub_list) (List.tl sub_list)
+    
+
   let is_zero p = 
     match sort_poly p with
      | (Sum [(Coef c, Prod [])]) when M.is_zero c -> true
@@ -172,6 +220,10 @@ module Make (M : sig
   let string_to_coef (Sum l) = 
     let mon_string_to_coef (Coef c, m) = (Coef (M.from_string_c c), m) in
     Sum (List.map mon_string_to_coef l)
+
+  let from_string_dum dum = 
+    let vp = Exp (dum, 1) in
+    Sum [(Coef (M.from_string_c "1"), Prod [vp])]
 
   let from_string s = 
     sort_poly (string_to_coef (PolyParse.main PolyLexer.token (Lexing.from_string s)))
