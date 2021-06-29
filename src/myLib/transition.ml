@@ -171,7 +171,7 @@ let max_project a b =
   let rlist = Array.to_list r in
   let basrows = List.filter (fun row -> Array.for_all Coefficient.is_zero (Array.sub row 0 (Array.length s))) rlist in
   let basis = ref (Array.of_list (List.map (fun row -> Array.sub row (Array.length s) ((Array.length (row)) - (Array.length s))) basrows)) in
-  for j = 1 to Array.length a do
+  for _ = 1 to Array.length a do
     let num_nonzero_rows = Array.fold_left (fun acc v -> if Coefficient.is_zero v.(0) then acc else acc+1) 0 !basis in
     if num_nonzero_rows <= 1 then
       basis := Array.map (fun row -> Array.sub row 1 ((Array.length row) - 1)) !basis
@@ -368,7 +368,7 @@ module AffineT = struct
   
   let totoify a b c =
     let rec aux curr_a curr_b curr_c = 
-      let (dyn, divsuc) = mat_div curr_b curr_a in
+      let (_, divsuc) = mat_div curr_b curr_a in
       if Array.for_all (fun x -> x) divsuc then (curr_a, curr_b, curr_c)
       else
         let tnew = max_project curr_a curr_b in
@@ -402,10 +402,10 @@ module AffineT = struct
     in
     String.concat "\n" (Array.to_list (Array.mapi (fun r _ -> row r) t))
 
-  let affine_to_dats init_a init_b init_c vars =
+  let affine_to_dats init_a init_b init_c _ =
     let (a, b, c) = totoify init_a init_b init_c in
     let (u, l, li, p) = lu a in
-    let (l, li) = (mat_mult p l, mat_mult li p) in
+    let (_, li) = (mat_mult p l, mat_mult li p) in
     let zero_rows = Array.fold_left (fun acc row -> if Array.for_all Coefficient.is_zero row then acc + 1 else acc) 0 u in
     let total_rows = Array.length u in
     let (dyn_mat, _) = mat_div (mat_mult li b) (Array.sub u 0 (total_rows - zero_rows)) in
@@ -480,7 +480,7 @@ module AffineT = struct
     let new_eq = List.map (fun (dum_var, term) -> add (from_string_dum dum_var) (mult (from_string "-1") term)) associated_vars_terms in
     let new_polys = Poly.Eliminate.eliminate (List.append polys new_eq) vars_to_elim in
     let new_map_in_dummy = List.filter is_lin_in_non_dummies new_polys in
-    let new_map = List.fold_left (fun old_polys (v, sub_poly) -> List.map (substitute (v, sub_poly)) old_polys) new_map_in_dummy associated_vars_terms in
+    let _ = List.fold_left (fun old_polys (v, sub_poly) -> List.map (substitute (v, sub_poly)) old_polys) new_map_in_dummy associated_vars_terms in
     let (t, little_t, d, little_d, s) = affine_to_dats a b c vars in
     print_endline ("Stratum 0");
     print_endline (dats_to_string t little_t d little_d vars s);
@@ -489,11 +489,11 @@ module AffineT = struct
 
 end 
 
-let p1 = Poly.Polynomial.from_string "x'-y'-x+y-2";;
+(* let p1 = Poly.Polynomial.from_string "x'-y'-x+y-2";;
 let p2 = Poly.Polynomial.from_string "z'-z-x^2+2xy-y^2";;
 let p3 = Poly.Polynomial.from_string "x-3";;
 let p4 = Poly.Polynomial.from_string "y";;
 let p5 = Poly.Polynomial.from_string "z+3";;
 let p6 = Poly.Polynomial.from_string "x'-x - 5";;
 let (t, little_t, d, little_d, sim, vars) = AffineT.alg_to_dats [p1;p2;p5] [("x", "x'"); ("y", "y'"); ("z","z'")];;
-print_endline (AffineT.dats_to_string t little_t d little_d vars sim)
+print_endline (AffineT.dats_to_string t little_t d little_d vars sim) *)

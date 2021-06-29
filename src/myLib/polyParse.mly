@@ -13,10 +13,10 @@
         %token <string> VAR
         %token PLUS MINUS TIMES POWER
         %token EOL
-        %left PLUS MINUS        /* lowest precedence */
-        %left TIMES             /* medium precedence */
+        /*%left PLUS MINUS      
+        %left TIMES             
         %right POWER
-        %nonassoc UMINUS        /* highest precedence */
+        %nonassoc UMINUS        */
         %start main             /* the entry point */
         %type <string Sigs.polynomial> main
         %%
@@ -26,7 +26,7 @@
         poly:
             monomial PLUS poly              { $1 :: $3 }
           | monomial MINUS poly             { $1 :: (negate_first $3) }
-          | MINUS monomial %prec UMINUS     { [negate_mon $2] }
+          | MINUS monomial                  { [negate_mon $2] }
           | monomial                        { [$1] }
         ;
         monomial:
